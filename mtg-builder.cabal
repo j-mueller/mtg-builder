@@ -1,0 +1,29 @@
+name:                mtg-builder
+version:             0.1.0.0
+synopsis:            Build decks for Magic: The Gathering
+-- description:
+homepage:            https://github.com/j-mueller/mtg-builder#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Jann Mueller
+maintainer:          j.mueller.11@ucl.ac.uk
+copyright:           Copyright: (c) 2017 Jann Mueller
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+extra-source-files:  README.md
+
+executable mtg-builder
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5,
+                       containers >= 0.5.8,
+                       free,
+                       intervals,
+                       lens,
+                       logict,
+                       mtl,
+                       random,
+                       semigroups,
+                       text
