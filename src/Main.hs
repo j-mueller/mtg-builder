@@ -4,12 +4,16 @@
 module Main where
 
 import Control.Lens hiding ((...))
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer hiding (Alt)
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Sequence
 import Numeric.Interval
+
+import Data.Text.Prettyprint.Doc (pretty)
+import Data.Text.Prettyprint.Doc.Util (putDocW)
 
 import Data
 import Effects
@@ -59,7 +63,11 @@ startGame theDeck = do
   library <~ shuffle theDeck
   draw 7
 
+-- | Play a number of times and aggregate the results
+-- | TODO: Return type should not be IO
+simulate :: Monoid r => Int -> Deck -> (GameState -> r) -> IO r
+simulate n d agg = fmap (foldMap agg) $ mapM (const $ fmap fst $ evalGame (startGame d)) [1..n]
+
 main :: IO ()
-main = do
-  (finalState, _) <- evalGame (startGame myDeck)
-  print finalState
+main = (simulate 1000 myDeck computeStats) >>= putDocW 80 . pretty
+  

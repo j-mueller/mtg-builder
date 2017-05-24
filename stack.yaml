@@ -19,10 +19,10 @@ extra-deps:
 - intervals-0.8
 - kan-extensions-5.0.2
 - lens-4.15.2
-- logict-0.6.0.2
 - mtl-2.2.1
 - parallel-3.2.1.1
 - prelude-extras-0.4.0.3
+- prettyprinter-0.1
 - primitive-0.6.2.0
 - profunctors-5.2
 - random-1.1

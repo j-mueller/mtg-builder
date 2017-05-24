@@ -9,20 +9,12 @@
 module Data where
 
 import Control.Lens hiding ((...))
-import Control.Monad.Free
-import Control.Monad.Logic.Class
-import Control.Monad.State
-import Control.Monad.Writer hiding (Alt)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Monoid hiding (Alt)
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Sequence
+import Data.Semigroup
 import Data.String (IsString(..))
 import Data.Text (Text)
-import qualified Data.Text as T
-import Numeric.Interval
-import System.Random
+import Data.Text.Prettyprint.Doc
 
 newtype Turn = Turn
   { _unTurn :: Int
@@ -30,9 +22,17 @@ newtype Turn = Turn
 
 makeClassy ''Turn
 
+instance Pretty Turn where
+  pretty = pretty . view unTurn
+
 newtype CardName = CardName
   { _unID :: Text
   } deriving (Eq, Ord, Show)
+
+makeLenses ''CardName
+
+instance Pretty CardName where
+  pretty = pretty . view unID
 
 instance IsString CardName where
   fromString = CardName . fromString
@@ -43,11 +43,21 @@ newtype Deck = Deck
 
 makeClassy ''Deck
 
+instance Pretty Deck where
+  pretty =
+    foldMap (\(card, count) -> pretty count <> space <> pretty card <> line) .
+    M.toList .
+    view unDeck
+
 newtype Library = Library
   { _unLibrary :: [CardName]
   } deriving (Eq, Ord, Show)
 
 makeClassy ''Library
+
+instance Pretty Library where
+  pretty =
+    encloseSep emptyDoc " (...)" (comma <> space) . fmap pretty . take 5 . view unLibrary
 
 newtype Hand = Hand
   { _unHand :: [CardName]
@@ -55,11 +65,17 @@ newtype Hand = Hand
 
 makeClassy ''Hand
 
+instance Pretty Hand where
+  pretty = vsep . punctuate comma . fmap pretty . view unHand
+
 newtype Battlefield = Battlefield
   { _unBattlefield :: [CardName]
   } deriving (Eq, Ord, Show)
 
 makeClassy ''Battlefield
+
+instance Pretty Battlefield where
+  pretty = vsep . punctuate comma . fmap pretty . view unBattlefield
 
 data ManaType
   = Green
@@ -69,11 +85,23 @@ data ManaType
 
 makePrisms ''ManaType
 
+instance Pretty ManaType where
+  pretty Green = "{G}"
+  pretty White = "{W}"
+  pretty Colourless = "{C}"
+
 newtype ManaPool = ManaPool
   { _unPool :: Map ManaType Int
   } deriving (Eq, Ord, Show)
 
 makeClassy ''ManaPool
+
+instance Pretty ManaPool where
+  pretty =
+    vsep . punctuate comma .
+    fmap (\(tpe, count) -> pretty count <> space <> pretty tpe <> line) .
+    M.toList .
+    view unPool
 
 data GameState = GameState
   { _gameStateTurn :: Turn
@@ -84,6 +112,34 @@ data GameState = GameState
   } deriving (Eq, Ord, Show)
 
 makeLenses ''GameState
+
+instance Pretty GameState where
+  pretty gs =
+    vsep
+      [ "Turn:" <> space <> pretty (gs ^. turn)
+      , nest
+          2
+          (vsep
+             [ "Hand (" <> (pretty $ length $ gs ^. hand . unHand) <> "):"
+             , pretty (gs ^. hand)
+             ])
+      , nest
+          2
+          (vsep
+             [ "Library (" <> (pretty $ length $ gs ^. library . unLibrary) <>
+               "):"
+             , pretty (gs ^. library)
+             ])
+      , nest
+          2
+          (vsep
+             [ "Battlefield (" <>
+               (pretty $ length $ gs ^. battlefield . unBattlefield) <>
+               "):"
+             , pretty (gs ^. battlefield)
+             ])
+      , nest 4 (vsep ["Mana pool (:", pretty (gs ^. manaPool)])
+      ]
 
 class HasGameState a where
   gameState :: Lens' a GameState
@@ -135,5 +191,45 @@ myDeck =
     , ("Titan Forge", 1)
     ]
 
-
 type GameLog = () --TODO: Proper log type
+
+isLand :: CardName -> Bool
+isLand (CardName n) = case n of
+  "Forest" -> True
+  "Plains" -> True
+  _ -> False
+
+newtype AvgLands = AvgLands { _unAvgLands :: (Sum Integer, Sum Integer) }
+  deriving (Eq, Ord, Show, Monoid)
+
+instance Semigroup AvgLands where
+  (<>) = mappend
+
+getAvgLands ::  AvgLands -> Double
+getAvgLands (AvgLands (Sum count, Sum total)) = 
+  (fromInteger count) / (fromInteger total)
+
+instance Pretty AvgLands where
+  pretty = pretty . getAvgLands
+
+landsInHand :: GameState -> AvgLands
+landsInHand gs = AvgLands (Sum lands, 1) where
+  lands = gs^.hand.unHand.to (toInteger . length . filter isLand)
+
+data DeckStatistics = DeckStatistics {
+  _averageLands :: AvgLands
+} deriving (Eq, Ord, Show)
+
+makeLenses ''DeckStatistics
+
+instance Monoid DeckStatistics where
+  mempty = DeckStatistics mempty
+  l `mappend` r = DeckStatistics $ (l^.averageLands) <> (r^.averageLands)
+
+instance Pretty DeckStatistics where
+  pretty ds = vsep [
+    "Lands in hand (avg): " <> (pretty $ ds^.averageLands)
+    ]
+
+computeStats :: GameState -> DeckStatistics
+computeStats = DeckStatistics <$> landsInHand

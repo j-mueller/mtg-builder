@@ -23,8 +23,8 @@ executable mtg-builder
                        free,
                        intervals,
                        lens,
-                       logict,
                        mtl,
+                       prettyprinter,
                        random,
                        semigroups,
                        text
