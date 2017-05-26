@@ -3,7 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 
-module Effects where
+module Mtg.Effects where
 
 import Control.Monad.Free
 import Control.Monad.Reader
@@ -12,7 +12,7 @@ import Control.Monad.Writer hiding (Alt)
 import Numeric.Interval
 import System.Random
 
-import Data
+import Mtg.Data
 
 data MagicF w s a
   = GetState (s -> a)

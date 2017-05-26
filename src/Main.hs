@@ -5,7 +5,6 @@
 module Main where
 
 import Control.Lens hiding ((...))
-import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer hiding (Alt)
@@ -16,8 +15,9 @@ import Numeric.Interval
 import Data.Text.Prettyprint.Doc (pretty)
 import Data.Text.Prettyprint.Doc.Util (putDocW)
 
-import Data
-import Effects
+import Mtg.Data
+import Mtg.Effects
+import qualified Mtg.Decks as Decks
 
 -- | Turn a deck into a library
 shuffle :: MonadRandom m => Deck -> m Library
@@ -25,7 +25,7 @@ shuffle (Deck cards) = fmap Library $ go theSeq []
   where
     theSeq =
       M.foldlWithKey'
-        (\s card (Sum count) -> s <> Sequence.replicate count card)
+        (\s cd (Sum count) -> s <> Sequence.replicate count cd)
         mempty
         cards
     go theDeck lib =
@@ -71,4 +71,4 @@ simulate n d agg =
   fmap (foldMap agg) $ mapM (const $ fmap fst $ evalGame (startGame d)) [1 .. n]
 
 main :: IO ()
-main = (simulate 1000 myDeck computeStats) >>= putDocW 80 . pretty
+main = (simulate 1000 Decks.myDeck computeStats) >>= putDocW 80 . pretty
