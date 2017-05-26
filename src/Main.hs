@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+
 module Main where
 
 import Control.Lens hiding ((...))
@@ -24,7 +25,7 @@ shuffle (Deck cards) = fmap Library $ go theSeq []
   where
     theSeq =
       M.foldlWithKey'
-        (\s card count -> s <> Sequence.replicate count card)
+        (\s card (Sum count) -> s <> Sequence.replicate count card)
         mempty
         cards
     go theDeck lib =
@@ -32,9 +33,9 @@ shuffle (Deck cards) = fmap Library $ go theSeq []
         0 -> return lib
         n -> do
           idx <- chooseFromInterval (0 ... n)
-          let card = Sequence.index theDeck idx
+          let topCard = Sequence.index theDeck idx
           let deck' = Sequence.deleteAt idx theDeck
-          go deck' (card : lib)
+          go deck' (topCard : lib)
 
 -- | Draw a number of cards from the library
 draw ::
@@ -66,8 +67,8 @@ startGame theDeck = do
 -- | Play a number of times and aggregate the results
 -- | TODO: Return type should not be IO
 simulate :: Monoid r => Int -> Deck -> (GameState -> r) -> IO r
-simulate n d agg = fmap (foldMap agg) $ mapM (const $ fmap fst $ evalGame (startGame d)) [1..n]
+simulate n d agg =
+  fmap (foldMap agg) $ mapM (const $ fmap fst $ evalGame (startGame d)) [1 .. n]
 
 main :: IO ()
 main = (simulate 1000 myDeck computeStats) >>= putDocW 80 . pretty
-  
