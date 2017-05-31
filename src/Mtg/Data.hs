@@ -315,3 +315,8 @@ instance Pretty DeckStatistics where
 
 computeStats :: GameState -> DeckStatistics
 computeStats = DeckStatistics <$> landsInHand <*> cmcInHand
+
+-- | Assign a numeric score to the state of the game
+-- TODO: Should be something better than a constant value
+score :: GameState -> Int
+score = const 10

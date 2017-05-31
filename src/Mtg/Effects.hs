@@ -5,32 +5,42 @@
 
 module Mtg.Effects where
 
-import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer hiding (Alt)
+import Data.List.NonEmpty as NEL
 import Numeric.Interval
 import System.Random
 
 import Mtg.Data
 
-data MagicF w s a
-  = GetState (s -> a)
+data Magic w s a
+  = GetState (s -> Magic w s a)
   | PutState s
-             a
+             (Magic w s a)
   | WriteLog w
-             a
-  | Alt [a] -- alternative (choose both)
+             (Magic w s a)
+  | Alt (NonEmpty (Magic w s a))
   | Random (Interval Int)
-           (Int -> a) -- supply a random number, inclusive in first argument, exclusive in second argument
-  | Yield a -- yield to let the other player do stuff; TODO: Use existential type to enforce this at the end of every action? 
+           (Int -> Magic w s a) -- supply a random number, inclusive in first argument, exclusive in second argument
+  | Yield a
   deriving (Functor)
 
-newtype Magic w s a = Magic
-  { _unMagic :: Free (MagicF w s) a
-  } deriving (Functor, Applicative, Monad)
+instance Monoid w => Applicative (Magic w s) where
+  pure = Yield
+  (<*>) = ap
 
-instance MonadState s (Magic w s) where
+instance Monoid w => Monad (Magic w s) where
+  l >>= r =
+    case l of
+      GetState f -> GetState $ \s -> f s >>= r
+      PutState s m -> PutState s $ m >>= r
+      WriteLog w m -> WriteLog w $ m >>= r
+      Alt ms -> Alt $ fmap (flip (>>=) r) ms
+      Random intvl f -> Random intvl $ \i -> f i >>= r
+      Yield a -> r a
+
+instance Monoid w => MonadState s (Magic w s) where
   get = getState
   put = putState
 
@@ -42,10 +52,10 @@ class Monad m =>
       MonadRandom m where
   chooseFromInterval :: Interval Int -> m Int
 
-instance MonadRandom (Magic w s) where
-  chooseFromInterval i = Magic $ Free $ Random i Pure
+instance Monoid w => MonadRandom (Magic w s) where
+  chooseFromInterval i = Random i Yield
 
-instance MonadReader s (Magic w s) where
+instance Monoid w => MonadReader s (Magic w s) where
   ask = getState
   local f m = do
     old <- getState
@@ -54,43 +64,77 @@ instance MonadReader s (Magic w s) where
 
 -- | Read the current state
 getState :: Magic w s s
-getState = Magic $ Free $ GetState Pure
+getState = GetState Yield
 
 -- | Write the current state
 putState :: s -> Magic w s ()
-putState s = Magic $ Free $ PutState s $ Pure ()
+putState s = PutState s $ Yield ()
 
 -- | Add an entry to the log
 writeLog :: w -> Magic w s ()
-writeLog w = Magic $ Free $ WriteLog w $ Pure ()
+writeLog w = WriteLog w $ Yield ()
 
 -- | Choose the best of a number of options
-alt :: [Magic w s a] -> Magic w s a
-alt = Magic . Free . Alt . fmap _unMagic
+alt :: Magic w s a -> [Magic w s a] -> Magic w s a
+alt x xs = Alt $ x :| xs
 
 -- | Randomly pick one of a number of options
 pick :: Int -> Int -> Magic w s Int
-pick lw hi = Magic $ Free $ Random (lw ... hi) $ \i -> Pure i
+pick lw hi = Random (lw ... hi) Yield
 
 yield :: Magic w s ()
-yield = Magic $ Free $ Yield $ Pure ()
+yield = Yield ()
 
 runMagic ::
-     (MonadIO m, Monoid w, MonadState s m, MonadWriter w m, Eq s, Ord s)
-  => Magic w s a
+     (MonadIO m, Monoid w, MonadState s m, MonadWriter w m, Eq t, Ord t)
+  => (s -> t)
+  -> Magic w s a
   -> m a
-runMagic (Magic f) = foldFree go f
+runMagic cmp ff = go ff
   where
-    go i =
-      case i of
-        PutState s x -> put s >> return x
-        GetState ff -> fmap (ff $) get
-        WriteLog w x -> tell w >> return x
-        Alt _ -> undefined -- TODO: Here we should evaluate all branches as far as posible, then choose the one with the highest payoff
+    go g =
+      case g of
+        PutState s x -> put s >> go x
+        GetState f -> do
+          theState <- get
+          go (f theState)
+        WriteLog w x -> tell w >> go x
+        Alt branches -> get >>= go . pickBranch cmp . runMagics branches
         Random intvl f -> do
           n <- liftIO $ getStdRandom (randomR (inf intvl, pred $ sup intvl))
-          return $ f n
+          go (f n)
         Yield x -> return x
 
+-- | Run some alternatives as far as possible (until IO is hit)
+runMagics ::
+     Monoid w => NonEmpty (Magic w s a) -> s -> NonEmpty (s, Magic w s a)
+runMagics branches currentState = branches >>= runBranch currentState
+
+runBranch :: Monoid w => s -> Magic w s a -> NonEmpty (s, Magic w s a)
+runBranch currentState f =
+  case f of
+    PutState s x -> runBranch s x
+    GetState ff -> runBranch currentState (ff currentState)
+    WriteLog w x -> runBranch currentState (tell w >> x)
+    Alt branches -> branches >>= runBranch currentState
+    Random _ _ -> (currentState, f) :| []
+    Yield _ -> (currentState, f) :| []
+
+-- | Perform a linear scan of a list of branches and return the best one 
+-- according to some discriminator `t`
+pickBranch ::
+     (Monoid w, Eq t, Ord t)
+  => (s -> t)
+  -> NonEmpty (s, Magic w s a)
+  -> Magic w s a
+pickBranch ev (x :| xs) = go x (ev $ fst x) xs
+  where
+    go (st, mg) _ [] = putState st >> mg
+    go (st, mg) t ((st', mg'):ys) =
+      let t' = ev st'
+      in if (t' > t)
+           then go (st', mg') t' ys
+           else go (st, mg) t ys
+
 evalGame :: Magic GameLog GameState () -> IO (GameState, GameLog)
-evalGame mm = runWriterT (execStateT (runMagic mm) initialState)
+evalGame mm = runWriterT (execStateT (runMagic score mm) initialState)
