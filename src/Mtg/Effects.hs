@@ -5,11 +5,13 @@
 
 module Mtg.Effects where
 
+import Control.Applicative
+import Control.Lens hiding ((...))
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer hiding (Alt)
-import Data.List.NonEmpty as NEL
-import Numeric.Interval
+import Data.List (partition)
+import Numeric.Interval hiding (empty)
 import System.Random
 
 import Mtg.Data
@@ -20,7 +22,7 @@ data Magic w s a
              (Magic w s a)
   | WriteLog w
              (Magic w s a)
-  | Alt (NonEmpty (Magic w s a))
+  | Alt [Magic w s a]
   | Random (Interval Int)
            (Int -> Magic w s a) -- supply a random number, inclusive in first argument, exclusive in second argument
   | Yield a
@@ -55,6 +57,25 @@ class Monad m =>
 instance Monoid w => MonadRandom (Magic w s) where
   chooseFromInterval i = Random i Yield
 
+focus :: [a] -> [(a, [a])]
+focus [] = []
+focus (x:xs) = (x, xs) : go [x] xs
+  where
+    go _ [] = []
+    go lefts (y:ys) = (y, lefts) : go (y : lefts) ys
+
+instance Monoid w => Alternative (Magic w s) where
+  empty = Alt []
+  l <|> r = Alt [l, r]
+
+instance Monoid w => MonadPlus (Magic w s) where
+  mzero = Alt []
+  mplus l r = Alt [l, r]
+
+-- | Pick all elements of a non-empty list using the monad choice effect
+pickAll :: MonadPlus m => [a] -> m (a, [a])
+pickAll = msum . fmap return . focus
+
 instance Monoid w => MonadReader s (Magic w s) where
   ask = getState
   local f m = do
@@ -75,8 +96,8 @@ writeLog :: w -> Magic w s ()
 writeLog w = WriteLog w $ Yield ()
 
 -- | Choose the best of a number of options
-alt :: Magic w s a -> [Magic w s a] -> Magic w s a
-alt x xs = Alt $ x :| xs
+alt :: [Magic w s a] -> Magic w s a
+alt = Alt
 
 -- | Randomly pick one of a number of options
 pick :: Int -> Int -> Magic w s Int
@@ -86,10 +107,17 @@ yield :: Magic w s ()
 yield = Yield ()
 
 runMagic ::
-     (MonadIO m, Monoid w, MonadState s m, MonadWriter w m, Eq t, Ord t)
+     ( MonadIO m
+     , Monoid w
+     , MonadState s m
+     , MonadWriter w m
+     , Eq t
+     , Ord t
+     , Monoid t
+     )
   => (s -> t)
-  -> Magic w s a
-  -> m a
+  -> Magic w s ()
+  -> m ()
 runMagic cmp ff = go ff
   where
     go g =
@@ -106,28 +134,29 @@ runMagic cmp ff = go ff
         Yield x -> return x
 
 -- | Run some alternatives as far as possible (until IO is hit)
-runMagics ::
-     Monoid w => NonEmpty (Magic w s a) -> s -> NonEmpty (s, Magic w s a)
+runMagics :: Monoid w => [Magic w s a] -> s -> [(s, Magic w s a)]
 runMagics branches currentState = branches >>= runBranch currentState
 
-runBranch :: Monoid w => s -> Magic w s a -> NonEmpty (s, Magic w s a)
+runBranch :: Monoid w => s -> Magic w s a -> [(s, Magic w s a)]
 runBranch currentState f =
   case f of
     PutState s x -> runBranch s x
     GetState ff -> runBranch currentState (ff currentState)
     WriteLog w x -> runBranch currentState (tell w >> x)
     Alt branches -> branches >>= runBranch currentState
-    Random _ _ -> (currentState, f) :| []
-    Yield _ -> (currentState, f) :| []
+    Random _ _ -> [(currentState, f)]
+    Yield _ -> [(currentState, f)]
 
 -- | Perform a linear scan of a list of branches and return the best one 
--- according to some discriminator `t`
+-- according to some discriminator `t`. The empty element of the `Monoid t` 
+-- instance should be the bottom element under `Ord t`.
 pickBranch ::
-     (Monoid w, Eq t, Ord t)
+     (Monoid w, Eq t, Ord t, Monoid t)
   => (s -> t)
-  -> NonEmpty (s, Magic w s a)
+  -> [(s, Magic w s a)]
   -> Magic w s a
-pickBranch ev (x :| xs) = go x (ev $ fst x) xs
+pickBranch _ [] = Alt []
+pickBranch ev (x:xs) = go x (ev $ fst x) xs
   where
     go (st, mg) _ [] = putState st >> mg
     go (st, mg) t ((st', mg'):ys) =
@@ -136,5 +165,23 @@ pickBranch ev (x :| xs) = go x (ev $ fst x) xs
            then go (st', mg') t' ys
            else go (st, mg) t ys
 
-evalGame :: Magic GameLog GameState () -> IO (GameState, GameLog)
+evalGame :: Monoid w => Magic w GameState () -> IO (GameState, w)
 evalGame mm = runWriterT (execStateT (runMagic score mm) initialState)
+
+selectFromHand ::
+     ( Monad m
+     , HasHand a
+     , HasHand a
+     , MonadReader a m
+     , MonadPlus m
+     , MonadState a m
+     )
+  => (Card -> Bool)
+  -> m Card
+selectFromHand pred = do
+  (good, bad) <- view $ hand . unHand . to (partition pred)
+  case good of
+    [] -> empty
+    x:xs -> do
+      hand .= (Hand $ bad ++ xs)
+      return x
