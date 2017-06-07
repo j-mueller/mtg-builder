@@ -2,8 +2,8 @@
 module Mtg.Decks where
 
 import qualified Data.Map.Strict as M
-import qualified Mtg.Cards as Cards
-import Mtg.Data
+import qualified Mtg.Cards       as Cards
+import           Mtg.Data
 
 -- https://deckstats.net/deck-13141458-e70c57464ad14d9780bf4084fedc74c6.html
 myDeck :: Deck

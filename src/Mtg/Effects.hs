@@ -1,20 +1,20 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 module Mtg.Effects where
 
-import Control.Applicative
-import Control.Lens hiding ((...))
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Writer hiding (Alt)
-import Data.List (partition)
-import Numeric.Interval hiding (empty)
-import System.Random
+import           Control.Applicative
+import           Control.Lens         hiding ((...))
+import           Control.Monad.Reader
+import           Control.Monad.State
+import           Control.Monad.Writer hiding (Alt)
+import           Data.List            (partition)
+import           Numeric.Interval     hiding (empty)
+import           System.Random
 
-import Mtg.Data
+import           Mtg.Data
 
 data Magic w s a
   = GetState (s -> Magic w s a)
@@ -147,8 +147,8 @@ runBranch currentState f =
     Random _ _ -> [(currentState, f)]
     Yield _ -> [(currentState, f)]
 
--- | Perform a linear scan of a list of branches and return the best one 
--- according to some discriminator `t`. The empty element of the `Monoid t` 
+-- | Perform a linear scan of a list of branches and return the best one
+-- according to some discriminator `t`. The empty element of the `Monoid t`
 -- instance should be the bottom element under `Ord t`.
 pickBranch ::
      (Monoid w, Eq t, Ord t, Monoid t)

@@ -3,8 +3,8 @@
 -- | A collection of MTG cards tp be used in decks
 module Mtg.Cards where
 
-import Data.Semigroup
-import Mtg.Data
+import           Data.Semigroup
+import           Mtg.Data
 
 anointedProcession :: Card
 anointedProcession =

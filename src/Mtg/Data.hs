@@ -1,21 +1,20 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Mtg.Data where
 
-import Control.Lens hiding ((...))
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as M
-import Data.Semigroup
-import qualified Data.Sequence as Sequence
-import Data.String (IsString(..))
-import Data.Text (Text)
-import Data.Text.Prettyprint.Doc
+import           Control.Lens              hiding ((...))
+import           Data.Map.Strict           (Map)
+import qualified Data.Map.Strict           as M
+import           Data.Semigroup
+import           Data.String               (IsString (..))
+import           Data.Text                 (Text)
+import           Data.Text.Prettyprint.Doc
 
 newtype Turn = Turn
   { _unTurn :: Int
@@ -176,11 +175,11 @@ instance Pretty ManaPool where
     view unPool
 
 data GameState = GameState
-  { _gameStateTurn :: Turn
-  , _gameStateHand :: Hand
-  , _gameStateLibrary :: Library
+  { _gameStateTurn        :: Turn
+  , _gameStateHand        :: Hand
+  , _gameStateLibrary     :: Library
   , _gameStateBattlefield :: Battlefield
-  , _gameStateManaPool :: ManaPool
+  , _gameStateManaPool    :: ManaPool
   } deriving (Eq, Ord, Show)
 
 makeLenses ''GameState
@@ -246,118 +245,6 @@ isLand c =
     "Plains" -> True
     _ -> False
 
--- TODO: Discrete distribution (Map a (Sum Integer)) 
-newtype AvgLands = AvgLands
-  { _unAvgLands :: (Sum Integer, Sum Integer)
-  } deriving (Eq, Ord, Show, Monoid)
-
-instance Semigroup AvgLands where
-  (<>) = mappend
-
-getAvgLands :: AvgLands -> Double
-getAvgLands (AvgLands (Sum count, Sum total)) =
-  (fromInteger count) / (fromInteger total)
-
-instance Pretty AvgLands where
-  pretty = pretty . getAvgLands
-
-landsInHand :: GameState -> AvgLands
-landsInHand gs = AvgLands (Sum lands, 1)
-  where
-    lands = gs ^. hand . unHand . to (toInteger . length . filter isLand)
-
--- | Avg. converted mana cost of starting hand
-newtype AvgCmc = AvgCmc
-  { _unAvgCmc :: (Sum Integer, Sum Integer)
-  } deriving (Eq, Ord, Show, Monoid)
-
-instance Semigroup AvgCmc where
-  (<>) = mappend
-
-getAvgCmc :: AvgCmc -> Double
-getAvgCmc (AvgCmc (Sum count, Sum total)) =
-  (fromInteger count) / (fromInteger total)
-
-instance Pretty AvgCmc where
-  pretty = pretty . getAvgCmc
-
-cmcInHand :: GameState -> AvgCmc
-cmcInHand gs = AvgCmc (Sum cmc, Sum $ toInteger cnt)
-  where
-    cmc =
-      gs ^. hand . unHand .
-      to
-        (toInteger . getSum . foldMap (Sum . convertedManaCost . view manaCost))
-    cnt = gs ^. hand . unHand . to length
-
--- | How much mana can we produce in each turn?
-newtype ManaCurve = ManaCurve
-  { _unManaCurve :: Map Turn (Sum Integer)
-  } deriving (Eq, Ord, Show)
-
-instance Semigroup ManaCurve where
-  (<>) = mappend
-
-instance Monoid ManaCurve where
-  mempty = ManaCurve M.empty
-  (ManaCurve l) `mappend` (ManaCurve r) =
-    ManaCurve $ M.mergeWithKey (\_ ll rr -> Just $ ll <> rr) id id l r
-
-newtype AvgManaCurve = AvgManaCurve
-  { _unAvgManaCurve :: (Sum Integer, ManaCurve)
-  } deriving (Eq, Ord, Show, Monoid)
-
-instance Semigroup AvgManaCurve where
-  (<>) = mappend
-
-getManaCurve :: (HasTurn a, HasBattlefield a) => a -> AvgManaCurve
-getManaCurve gs = AvgManaCurve (Sum 1, ManaCurve $ M.fromList [(t, Sum mana)])
-  where
-    t = gs ^. turn
-    mana =
-      gs ^. battlefield . unBattlefield .
-      to (toInteger . length . filter isLand)
-
-getAvgManaCurve :: AvgManaCurve -> Map Turn Double
-getAvgManaCurve (AvgManaCurve (Sum n, ManaCurve mp)) =
-  fmap (flip (/) (fromInteger n) . fromInteger . getSum) mp
-
-instance Pretty AvgManaCurve where
-  pretty a = vsep $ fmap (proc . Turn) [1 .. 5]
-    where
-      averages = getAvgManaCurve a
-      proc t =
-        "Turn " <> pretty t <> " : " <> (maybe "" pretty $ M.lookup t averages)
-
-data DeckStatistics = DeckStatistics
-  { _averageLands :: AvgLands
-  , _averageCmc :: AvgCmc
-  , _averageManaCurve :: AvgManaCurve
-  } deriving (Eq, Ord, Show)
-
-makeLenses ''DeckStatistics
-
-stats :: DeckStatistics
-stats = mempty
-
-instance Monoid DeckStatistics where
-  mempty = DeckStatistics mempty mempty mempty
-  l `mappend` r = DeckStatistics ll cc mp
-    where
-      ll = (l ^. averageLands) <> (r ^. averageLands)
-      cc = (l ^. averageCmc) <> (r ^. averageCmc)
-      mp = (l ^. averageManaCurve) <> (r ^. averageManaCurve)
-
-instance Pretty DeckStatistics where
-  pretty ds =
-    vsep
-      [ "Lands in hand (avg): " <> (pretty $ ds ^. averageLands)
-      , "Converted mana cost (avg): " <> (pretty $ ds ^. averageCmc)
-      , "Mana curve (avg):" <> (pretty $ ds ^. averageManaCurve)
-      ]
-
-computeStats :: GameState -> DeckStatistics
-computeStats = DeckStatistics <$> landsInHand <*> cmcInHand <*> const mempty
 
 -- | Assign a numeric score to the state of the game
 -- TODO: Should be something better than a constant value
