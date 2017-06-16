@@ -90,8 +90,9 @@ twoOf = nOf 2
 threeOf :: ManaType -> ManaCost
 threeOf = nOf 3
 
-convertedManaCost :: ManaCost -> Int
-convertedManaCost =
+-- | Compute the converted mana cost of a card
+cmc :: ManaCost -> Int
+cmc =
   getSum .
   foldMap
     (\(smb, cnt) ->
