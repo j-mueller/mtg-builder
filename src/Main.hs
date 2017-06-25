@@ -99,6 +99,28 @@ startGame theDeck = do
   gameState .= initialState
   library <~ shuffle theDeck
   draw 7
+  playTurn
+  playTurn
+  playTurn
+  playTurn
+  playTurn
+
+playTurn :: ( Monad m
+     , HasGameState a
+     , HasLibrary a
+     , HasTurn a
+     , MonadState a m
+     , MonadRandom m
+     , MonadReader a m
+     , HasHand a
+     , HasBattlefield a
+     , MonadWriter DeckStatistics m
+     , MonadPlus m
+     )
+  => m ()
+playTurn = do
+  turn %= succ
+  draw 1
   logLandsInHand
   logConvertedManaCost
   playLand'

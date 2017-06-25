@@ -18,7 +18,7 @@ import           Data.Text.Prettyprint.Doc
 
 newtype Turn = Turn
   { _unTurn :: Int
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Enum)
 
 makeClassy ''Turn
 
@@ -221,7 +221,7 @@ instance HasGameState GameState where
 
 initialState :: GameState
 initialState =
-  GameState (Turn 1) (Hand []) (Library []) (Battlefield []) (ManaPool M.empty)
+  GameState (Turn 0) (Hand []) (Library []) (Battlefield []) (ManaPool M.empty)
 
 instance HasTurn GameState where
   turn = lens (view gameStateTurn) (flip $ set gameStateTurn)
@@ -245,7 +245,6 @@ isLand c =
     "Forest" -> True
     "Plains" -> True
     _ -> False
-
 
 -- | Assign a numeric score to the state of the game
 -- TODO: Should be something better than a constant value
