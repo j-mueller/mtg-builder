@@ -90,6 +90,9 @@ twoOf = nOf 2
 threeOf :: ManaType -> ManaCost
 threeOf = nOf 3
 
+fourOf :: ManaType -> ManaCost
+fourOf = nOf 4
+
 -- | Compute the converted mana cost of a card
 cmc :: ManaCost -> Int
 cmc =
@@ -153,6 +156,13 @@ makeClassy ''Hand
 instance Pretty Hand where
   pretty = vsep . punctuate comma . fmap pretty . view unHand
 
+instance Semigroup Hand where
+  (Hand l) <> (Hand r) = Hand $ l <> r
+
+instance Monoid Hand where
+  mappend = (<>)
+  mempty = Hand []
+
 newtype Battlefield = Battlefield
   { _unBattlefield :: [Card]
   } deriving (Eq, Ord, Show, Monoid)
@@ -176,11 +186,11 @@ instance Pretty ManaPool where
     view unPool
 
 data GameState = GameState
-  { _gameStateTurn        :: Turn
-  , _gameStateHand        :: Hand
-  , _gameStateLibrary     :: Library
-  , _gameStateBattlefield :: Battlefield
-  , _gameStateManaPool    :: ManaPool
+  { _gameStateTurn        :: !Turn
+  , _gameStateHand        :: !Hand
+  , _gameStateLibrary     :: !Library
+  , _gameStateBattlefield :: !Battlefield
+  , _gameStateManaPool    :: !ManaPool
   } deriving (Eq, Ord, Show)
 
 makeLenses ''GameState
@@ -244,6 +254,8 @@ isLand c =
   case c ^. cardName of
     "Forest" -> True
     "Plains" -> True
+    "Dryad Arbor" -> True
+    "Evolving Wilds" -> True
     _ -> False
 
 -- | Assign a numeric score to the state of the game

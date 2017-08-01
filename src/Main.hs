@@ -46,7 +46,7 @@ draw ::
 draw i = do
   (hd, rst) <- view $ library . unLibrary . to (splitAt i)
   library .= (Library rst)
-  hand .= (Hand hd)
+  hand <>= (Hand hd)
 
 hasLand :: (Monad m, HasHand a, MonadReader a m) => m Bool
 hasLand = view $ hand . unHand . to (any isLand)
@@ -78,6 +78,12 @@ playLand' = do
     then playLand
     else return ()
 
+emptyHand :: 
+    ( Monad m
+    , HasHand a
+    , MonadState a m)
+    => m ()
+emptyHand = hand .= mempty
 
 -- | Start the game by shuffling a deck.
 startGame ::
@@ -99,11 +105,32 @@ startGame theDeck = do
   gameState .= initialState
   library <~ shuffle theDeck
   draw 7
+  maybeMulligan theDeck
   playTurn
   playTurn
   playTurn
   playTurn
   playTurn
+
+maybeMulligan :: ( Monad m
+    , HasHand a
+    , HasLibrary a
+    , MonadState a m 
+    , MonadRandom m
+    , MonadReader a m
+    , MonadWriter DeckStatistics m
+    , MonadPlus m)
+    => Deck 
+    -> m ()
+maybeMulligan d = do
+  Hand hnd <- view hand
+  let numLands = length $ filter isLand hnd
+  case length hnd of
+    7 -> do
+      if numLands < 3 then (library <~ shuffle d) >> emptyHand >> (draw 6) else return ()
+    6 -> do
+      if numLands < 3 then (library <~ shuffle d) >> emptyHand >> (draw 5) else return ()
+    _ -> return ()
 
 playTurn :: ( Monad m
      , HasGameState a
@@ -123,6 +150,7 @@ playTurn = do
   draw 1
   logLandsInHand
   logConvertedManaCost
+  logCardsInHand
   playLand'
   logAvgManaCurve
 

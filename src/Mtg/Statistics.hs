@@ -91,6 +91,39 @@ logLandsInHand = count >>= write
       return $ countLands t lds
     write i = tell $ mempty & landsInHand .~ i
 
+newtype CardsInHand = CardsInHand
+  { _unCardsInHand :: TurnDistribution
+  } deriving (Eq, Ord, Show, Monoid)
+
+makeClassy ''CardsInHand
+
+countCards :: Turn -> Integer -> CardsInHand
+countCards t = CardsInHand . countTurn t
+
+instance Semigroup CardsInHand where
+  (<>) = mappend
+
+instance Pretty CardsInHand where
+  pretty = pretty . view unCardsInHand
+
+logCardsInHand ::
+     ( Monad m
+     , MonadReader a m
+     , HasHand a
+     , HasTurn a
+     , Monoid b
+     , HasCardsInHand b
+     , MonadWriter b m
+     )
+  => m ()
+logCardsInHand = count >>= write
+  where
+    count = do
+      t <- view turn
+      lds <- view $ hand . unHand . to (toInteger . length)
+      return $ countCards t lds
+    write i = tell $ mempty & cardsInHand .~ i
+
 -- | Avg. converted mana cost of starting hand
 newtype ConvertedManaCost = ConvertedManaCost
   { _unConvertedManaCost :: TurnDistribution
@@ -167,9 +200,10 @@ logAvgManaCurve = getManaCurve >>= write
     write m = tell $ mempty & manaCurve .~ m
 
 data DeckStatistics = DeckStatistics
-  { _dsLandsInHand       :: LandsInHand
-  , _dsConvertedManaCost :: ConvertedManaCost
-  , _dsManaCurve         :: ManaCurve
+  { _dsLandsInHand       :: !LandsInHand
+  , _dsConvertedManaCost :: !ConvertedManaCost
+  , _dsManaCurve         :: !ManaCurve
+  , _dsCardsInHand       :: !CardsInHand
   } deriving (Eq, Ord, Show)
 
 makeLenses ''DeckStatistics
@@ -183,21 +217,27 @@ instance HasConvertedManaCost DeckStatistics where
 instance HasManaCurve DeckStatistics where
   manaCurve = dsManaCurve
 
+instance HasCardsInHand DeckStatistics where
+  cardsInHand = dsCardsInHand
+
 stats :: DeckStatistics
 stats = mempty
 
 instance Monoid DeckStatistics where
-  mempty = DeckStatistics mempty mempty mempty
-  l `mappend` r = DeckStatistics ll cc mp
+  mempty = DeckStatistics mempty mempty mempty mempty
+  l `mappend` r = DeckStatistics ll cc mp ch
     where
       ll = (l ^. landsInHand) <> (r ^. landsInHand)
       cc = (l ^. convertedManaCost) <> (r ^. convertedManaCost)
       mp = (l ^. manaCurve) <> (r ^. manaCurve)
+      ch = (l ^. cardsInHand) <> (r ^. cardsInHand)
+
 
 instance Pretty DeckStatistics where
   pretty ds =
     vsep
-      [ "Lands in hand (avg): " <> (pretty $ ds ^. landsInHand)
-      , "Converted mana cost (avg): " <> (pretty $ ds ^. convertedManaCost)
-      , "Mana curve (avg):" <> (pretty $ ds ^. manaCurve)
+      [ nest 2 $  "Lands in hand (avg): " <> line <> (pretty $ ds ^. landsInHand)
+      , nest 2 $ "Converted mana cost (avg): " <> line <> (pretty $ ds ^. convertedManaCost)
+      , nest 2 $ "Mana curve (avg):" <> line <> (pretty $ ds ^. manaCurve)
+      , nest 2 $ "Cards in hand (avg): " <> line <> (pretty $ ds ^. cardsInHand)
       ]
